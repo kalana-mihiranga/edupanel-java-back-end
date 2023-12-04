@@ -1,13 +1,12 @@
 package lk.ijse.dep11.edupanel.api;
 
-
 import lk.ijse.dep11.edupanel.to.request.LecturerReqTO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
 import javax.sql.DataSource;
-import javax.swing.text.AbstractDocument;
 import javax.validation.Valid;
 import java.sql.*;
 
@@ -15,67 +14,76 @@ import java.sql.*;
 @RequestMapping("/api/v1/lecturers")
 @CrossOrigin
 public class LecturerHttpController {
+
     @Autowired
     private DataSource pool;
 
     @ResponseStatus(HttpStatus.CREATED)
-    @PostMapping(consumes = "multipart/form-data",produces = "application/json")
+    @PostMapping(consumes = "multipart/form-data", produces = "application/json")
     public void createNewLecturer(@ModelAttribute @Valid LecturerReqTO lecturer){
-        try {
-            Connection connection = pool.getConnection();
-            PreparedStatement preparedStatement = connection.prepareStatement("INSERT INTO lecturer(id, name, designation, qualifications, picture, linkedin) VALUES (?,?,?,?)", Statement.RETURN_GENERATED_KEYS);
-            preparedStatement.setString(1, lecturer.getName());
-            preparedStatement.setString(1, lecturer.getDesignation());
-            preparedStatement.setString(1, lecturer.getQualifications());
-            preparedStatement.setString(1, lecturer.getLinkedin());
-            preparedStatement.executeUpdate();
-            ResultSet generatedKeys = preparedStatement.getGeneratedKeys();
-            generatedKeys.next();
+        try (Connection connection = pool.getConnection()) {
+            connection.setAutoCommit(false);
 
-            int lecturerId=generatedKeys.getInt("id");
-            String picture=lecturerId+"-"+lecturer.getName();
+            try {
+                PreparedStatement stmInsertLecturer = connection
+                        .prepareStatement("INSERT INTO lecturer " +
+                                "(name, designation, qualifications, linkedin) " +
+                                "VALUES (?, ?, ?, ?)", Statement.RETURN_GENERATED_KEYS);
+                stmInsertLecturer.setString(1, lecturer.getName());
+                stmInsertLecturer.setString(2, lecturer.getDesignation());
+                stmInsertLecturer.setString(3, lecturer.getQualifications());
+                stmInsertLecturer.setString(4, lecturer.getLinkedin());
+                stmInsertLecturer.executeUpdate();
+                ResultSet generatedKeys = stmInsertLecturer.getGeneratedKeys();
+                generatedKeys.next();
+                int lecturerId = generatedKeys.getInt(1);
+                String picture = lecturerId + "-" + lecturer.getName();
 
-            if(lecturer.getPicture()!=null||!lecturer.getPicture().isEmpty()){
-                PreparedStatement preparedStatement1 = connection.prepareStatement("UPDATE lecturer SET picture=? WHERE id=?");
-                preparedStatement1.setString(1,picture);
-                preparedStatement1.setInt(2,lecturerId);
-                preparedStatement1.executeUpdate();
+                if (lecturer.getPicture() != null || !lecturer.getPicture().isEmpty()) {
+                    PreparedStatement stmUpdateLecturer = connection
+                            .prepareStatement("UPDATE lecturer SET picture = ? WHERE id = ?");
+                    stmUpdateLecturer.setString(1, picture);
+                    stmUpdateLecturer.setInt(2, lecturerId);
+                    stmUpdateLecturer.executeUpdate();
+                }
 
-            }
-
-            if (lecturer.getType().equalsIgnoreCase("full-time")){
-                Statement statement = connection.createStatement();
-                ResultSet resultSet = statement.executeQuery("SELECT `rank` FROM full_time_rank ORDER BY  `rank`DESC LIMIT ");
+                final String table = lecturer.getType().equalsIgnoreCase("full-time")
+                        ? "full_time_rank": "part_time_rank";
+                Statement stm = connection.createStatement();
+                ResultSet rst = stm.executeQuery("SELECT `rank` FROM "+ table +" ORDER BY `rank` DESC LIMIT 1");
                 int rank;
-                if(!resultSet.next()) rank=1;
+                if (!rst.next()) rank = 1;
+                else rank = rst.getInt("rank") + 1;
+                PreparedStatement stmInsertRank = connection
+                        .prepareStatement("INSERT INTO "+ table +" (lecturer_id, `rank`) VALUES (?, ?)");
+                stmInsertRank.setInt(1, lecturerId);
+                stmInsertRank.setInt(2, rank);
+                stmInsertRank.executeUpdate();
 
-
-
-            }else {
-                resultSet,
+                connection.commit();
+            }catch (Throwable t){
+                connection.rollback();
+                throw t;
+            }finally {
+                connection.setAutoCommit(true);
             }
-
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
-
-
-        System.out.println(lecturer);
-        System.out.println("createNewLecturer");
     }
 
     @PatchMapping("/{lecturer-id}")
     public void updateLecturerDetails(){
-        System.out.println("updateLecturerDetails");
+        System.out.println("updateLecturerDetails()");
     }
 
     @DeleteMapping("/{lecturer-id}")
     public void deleteLecturer(){
-        System.out.println("deleteLecturer");
+        System.out.println("deleteLecturer()");
     }
 
     @GetMapping
     public void getAllLecturers(){
-        System.out.println("getAllLecturers");
+        System.out.println("getAllLecturers()");
     }
 }
